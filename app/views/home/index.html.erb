@@ -1,0 +1,8 @@
+<div class='content'>	
+	<%= form_tag find_supplier_path do %>
+		<p><%= text_field_tag :post_code, '', required: true, placeholder: "Enter the postcode to find the water supplier of your property" %></p>
+
+		<%= submit_tag 'Search Water Supplier' %>
+	<% end %>
+
+</div>
