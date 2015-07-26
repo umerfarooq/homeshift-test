@@ -1,40 +1,53 @@
 class HomeController < ApplicationController
-	Capybara.run_server = false
-	Capybara.current_driver = :webkit
-
-	include Capybara::DSL
 
 	def index
 	end
 
+  # Procedure, specifically crafted to find a Postal Code in Thames Water supply area
 	def find_supplier
-		post_code = params[:post_code]
-		notice = "Sorry we can't find this Postcode in the supply areas of either Thames Water or Affinity Water"
+        require "net/http"
+        require "uri"
 
-		# Case 1: Check for the Water Supplier in Thames Water Database
-		visit("http://www.thameswater.co.uk/your-account/605.htm")
-    fill_in "postcode1", :with => post_code 
-    click_button "submit"
+        post_code = params[:post_code]
+        notice = "Sorry we can't find this Postcode in the supply areas of Thames Water"
 
-    all("#middlesidewide h1").each do |h1| 
-      if h1.text.downcase.include? 'your property is in our supply area'
-      	notice = "Your property is in the supply area of Thames Water"
-      	return redirect_to root_url, notice: notice
-      end
-    end
+        # Thames Water's URL pattern to initiate search request with Postal Code input by the searcher
+        search_request_uri = "https://secure.thameswater.co.uk/dynamic/cps/rde/xchg/corp/hs.xsl/Thames_Water_Supply.xml"
+        uri = URI(search_request_uri)
+        params = { :postcode1 => post_code }
+        uri.query = URI.encode_www_form(params)
 
-    # Case 2: Check for the Water Supplier in Affinity Water Database
-		visit("http://www.affinitywater.co.uk/im-moving.aspx")
-    fill_in "template_txtPostcodePanelSearch", :with => post_code 
-    click_button "Search"
-    result = find('#template_pnl_area_results').find('h3').text
-    
-    if result.downcase.include? 'affinity water supplies your area.'
-    	notice = "Your property is in the supply area of Affinity Water"
-    	return redirect_to root_url, notice: notice
-    end
+        # Enable secure request mode
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = true
+        http.verify_mode = OpenSSL::SSL::VERIFY_NONE
 
-    redirect_to root_url, notice: notice
+        # Initial search request with Postal Code
+        request = Net::HTTP::Get.new(uri.request_uri)
+
+        # Response from the search engine
+        response = http.request(request)
+        
+        # Thames Water redirects to the search result page after the search completes, Hence another call
+        location = response['location']
+        uri = URI(location)
+        http = Net::HTTP.new(uri.host, uri.port)
+        request = Net::HTTP::Get.new(uri.request_uri)
+        response = http.request(request)
+
+        # Nokogiri to help us crawl through the ugly and raw http response 
+        doc = Nokogiri::HTML(response.body)
+
+        # Thames Water search result page uses H1 to render the search result notice
+        doc.xpath('//h1').each do |h1|
+          puts h1.text
+
+          if h1.text.downcase.include? 'your property is in our supply area'
+            notice = "Your property is in the supply area of Thames Water"
+          end
+        end
+
+        redirect_to root_url, notice: notice
 	end
 
 end
